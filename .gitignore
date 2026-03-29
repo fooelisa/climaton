@@ -1,0 +1,19 @@
+# APK and decompiled files (not redistributable)
+apk/
+
+# Token files (device-specific secrets)
+climaton/token.json
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude plans
+.claude/

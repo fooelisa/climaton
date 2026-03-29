@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Climaton Water Heater",
+        "description": "Enter the device connection details. Run the pairing tool to obtain the token.",
+        "data": {
+          "host": "Device IP address",
+          "port": "UDP port",
+          "token": "Device token (32 hex characters)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to device. Check IP, port, and token.",
+      "invalid_token": "Token must be exactly 32 hex characters (16 bytes)."
+    }
+  }
+}

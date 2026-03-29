@@ -1,0 +1,9 @@
+{
+  "domain": "climaton",
+  "name": "Climaton Water Heater",
+  "codeowners": ["@fooelisa"],
+  "config_flow": true,
+  "documentation": "https://github.com/fooelisa/climaton",
+  "iot_class": "local_polling",
+  "version": "0.1.0"
+}
