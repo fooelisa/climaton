@@ -155,13 +155,12 @@ class ClimatonConnection:
         return self.connect()
 
     def poll(self) -> bool:
-        """Poll device for current state. Reconnects if needed."""
-        if not self._connected:
-            return self.reconnect()
-        # Send ping and collect any pending state updates
-        self._send_cmd(CMD_PING)
-        self._recv_loop(1.0)
-        return self._connected
+        """Poll device for current state by reconnecting.
+
+        The device pushes all state after handshake, so a fresh
+        connection is the most reliable way to get current values.
+        """
+        return self.reconnect()
 
     def start_listening(self, on_state_changed: Optional[Callable[[DeviceState], None]] = None):
         self._on_state_changed = on_state_changed
