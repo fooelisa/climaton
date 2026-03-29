@@ -53,8 +53,8 @@ class ClimatonToggleSwitch(CoordinatorEntity[ClimatonCoordinator], SwitchEntity)
 
     async def async_turn_on(self, **kwargs):
         await self.hass.async_add_executor_job(self._setter, True)
-        await self.coordinator.async_request_refresh()
+        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
         await self.hass.async_add_executor_job(self._setter, False)
-        await self.coordinator.async_request_refresh()
+        self.async_write_ha_state()

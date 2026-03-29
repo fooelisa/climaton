@@ -83,191 +83,204 @@ class DeviceState:
 
 
 class ClimatonConnection:
-    """UDP connection to a Climaton/Syncleo device."""
+    """UDP connection to a Climaton/Syncleo device.
+
+    All public methods are serialized with a lock so poll() and write
+    commands can never race each other.
+    """
 
     def __init__(self, host: str, port: int = 41122, token: bytes = b'\x00' * 16):
         self.host = host
         self.port = port
         self.token = token
         self.state = DeviceState()
-
-        self._sock: Optional[socket.socket] = None
-        self._seq_out = 0xFF
-        self._connected = False
         self._lock = threading.Lock()
-        self._listener_thread: Optional[threading.Thread] = None
-        self._running = False
-        self._on_state_changed: Optional[Callable[[DeviceState], None]] = None
-        self._last_ping = 0.0
-
-    @property
-    def connected(self) -> bool:
-        return self._connected
 
     def connect(self, timeout: float = 10.0) -> bool:
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._sock.settimeout(0.5)
-        self._seq_out = 0xFF
-
-        self._send_cmd(CMD_HANDSHAKE, self.token)
-
-        start = time.time()
-        while time.time() - start < timeout:
-            result = self._recv_one()
-            if result is None:
-                continue
-            ftype, seq, payload = result
-            if ftype == FRAME_CMD and payload and payload[0] == CMD_HANDSHAKE:
-                data = payload[1:]
-                if len(data) >= 21:
-                    resp_token = data[5:21]
-                    if resp_token == b'\x00' * 16:
-                        _LOGGER.error("Device rejected token")
-                        self.disconnect()
-                        return False
-                    self._connected = True
-
-                    ts = int(time.time())
-                    offset = int(datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).astimezone().utcoffset().total_seconds() / 60)
-                    self._send_cmd(CMD_TIMESYNC, struct.pack('<iH', ts, offset & 0xFFFF))
-                    self._send_cmd(CMD_DIAGNOSTICS, b'\x00')
-                    self._recv_loop(3.0)
-                    return True
-
-        _LOGGER.error("Handshake timeout")
-        self.disconnect()
-        return False
+        """Connect and read initial state."""
+        with self._lock:
+            return self._connect(timeout)
 
     def disconnect(self):
-        self._running = False
-        self._connected = False
-        if self._listener_thread and self._listener_thread.is_alive():
-            self._listener_thread.join(timeout=3)
-        if self._sock:
-            self._sock.close()
-            self._sock = None
-
-    def reconnect(self) -> bool:
-        self.disconnect()
-        time.sleep(0.3)
-        return self.connect()
+        with self._lock:
+            self._disconnect()
 
     def poll(self) -> bool:
-        """Poll device for current state by reconnecting.
-
-        The device pushes all state after handshake, so a fresh
-        connection is the most reliable way to get current values.
-        """
-        return self.reconnect()
-
-    def start_listening(self, on_state_changed: Optional[Callable[[DeviceState], None]] = None):
-        self._on_state_changed = on_state_changed
-        self._running = True
-        self._listener_thread = threading.Thread(target=self._listen_loop, daemon=True)
-        self._listener_thread.start()
-
-    def stop_listening(self):
-        self._running = False
+        """Poll device by doing a fresh connect cycle."""
+        with self._lock:
+            return self._cycle()
 
     def set_temperature(self, temp: float):
         temp = max(30.0, min(75.0, temp))
-        self._send_cmd(CMD_TARGET_TEMP, encode_temp(temp))
+        with self._lock:
+            self._write_cmd(CMD_TARGET_TEMP, encode_temp(temp))
 
     def set_mode(self, mode: int):
-        self._send_cmd(CMD_MODE, bytes([mode & 0xFF]))
+        with self._lock:
+            self._write_cmd(CMD_MODE, bytes([mode & 0xFF]))
 
     def set_keep_warm(self, enabled: bool):
-        self._send_cmd(CMD_KEEP_WARM, bytes([1 if enabled else 0]))
+        with self._lock:
+            self._write_cmd(CMD_KEEP_WARM, bytes([1 if enabled else 0]))
 
     def set_smart_mode(self, enabled: bool):
-        self._send_cmd(CMD_SMART_MODE, bytes([1 if enabled else 0]))
+        with self._lock:
+            self._write_cmd(CMD_SMART_MODE, bytes([1 if enabled else 0]))
 
     def set_bss(self, enabled: bool):
-        self._send_cmd(CMD_BSS, bytes([1 if enabled else 0]))
+        with self._lock:
+            self._write_cmd(CMD_BSS, bytes([1 if enabled else 0]))
 
     def set_turbo(self, enabled: bool):
-        self._send_cmd(CMD_TURBO, bytes([1 if enabled else 0]))
-
-    def _send_cmd(self, cmd: int, payload: bytes = b""):
         with self._lock:
-            self._seq_out = (self._seq_out + 1) & 0xFF
-            data = _build_frame(self._seq_out, FRAME_CMD, bytes([cmd & 0xFF]) + payload)
-            if self._sock:
-                try:
-                    self._sock.sendto(data, (self.host, self.port))
-                except OSError:
-                    self._connected = False
+            self._write_cmd(CMD_TURBO, bytes([1 if enabled else 0]))
 
-    def _send_ack(self, seq: int):
-        data = _build_frame(seq, FRAME_ACK, b"")
-        if self._sock:
-            try:
-                self._sock.sendto(data, (self.host, self.port))
-            except OSError:
-                pass
+    # --- Private methods (must be called with _lock held) ---
 
-    def _recv_one(self):
+    def _write_cmd(self, cmd: int, payload: bytes):
+        """Send a write command: connect, send, collect state, disconnect."""
+        sock, seq = self._open_and_handshake()
+        if sock is None:
+            return
+
+        # Send the actual command
+        seq = (seq + 1) & 0xFF
+        data = _build_frame(seq, FRAME_CMD, bytes([cmd & 0xFF]) + payload)
+        sock.sendto(data, (self.host, self.port))
+
+        # Wait for ACK + state update
+        self._collect_state(sock, 2.0)
+        sock.close()
+
+    def _cycle(self) -> bool:
+        """Full connect cycle: handshake, collect state, disconnect."""
+        sock, seq = self._open_and_handshake()
+        if sock is None:
+            return False
+        sock.close()
+        return True
+
+    def _connect(self, timeout: float) -> bool:
+        """Initial connect (same as _cycle but with configurable timeout)."""
+        sock, seq = self._open_and_handshake(timeout)
+        if sock is None:
+            return False
+        sock.close()
+        return True
+
+    def _disconnect(self):
+        pass  # No persistent socket to close anymore
+
+    def _open_and_handshake(self, timeout: float = 10.0):
+        """Create socket, do handshake, collect state. Returns (sock, seq) or (None, 0)."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(0.5)
+        seq = 0
+
+        # Send handshake
+        data = _build_frame(seq, FRAME_CMD, bytes([CMD_HANDSHAKE]) + self.token)
+        sock.sendto(data, (self.host, self.port))
+
+        # Wait for handshake response
+        start = time.time()
+        handshake_ok = False
+        while time.time() - start < timeout:
+            frame = self._recv_frame(sock)
+            if frame is None:
+                continue
+            ftype, fseq, payload = frame
+            if ftype == FRAME_CMD and payload and payload[0] == CMD_HANDSHAKE:
+                resp_data = payload[1:]
+                if len(resp_data) >= 21:
+                    resp_token = resp_data[5:21]
+                    if resp_token == b'\x00' * 16:
+                        _LOGGER.error("Device rejected token")
+                        sock.close()
+                        return None, 0
+                    handshake_ok = True
+                    break
+
+        if not handshake_ok:
+            _LOGGER.error("Handshake timeout")
+            sock.close()
+            return None, 0
+
+        # Send timesync + diagnostics
+        ts = int(time.time())
+        tz_offset = int(datetime.datetime.now(
+            datetime.timezone.utc
+        ).astimezone().utcoffset().total_seconds() / 60)
+
+        seq = (seq + 1) & 0xFF
+        sock.sendto(
+            _build_frame(seq, FRAME_CMD, bytes([CMD_TIMESYNC]) + struct.pack('<iH', ts, tz_offset & 0xFFFF)),
+            (self.host, self.port),
+        )
+        seq = (seq + 1) & 0xFF
+        sock.sendto(
+            _build_frame(seq, FRAME_CMD, bytes([CMD_DIAGNOSTICS, 0x00]),),
+            (self.host, self.port),
+        )
+
+        # Collect state dump
+        self._collect_state(sock, 3.0)
+        return sock, seq
+
+    def _collect_state(self, sock: socket.socket, duration: float):
+        """Read frames for `duration` seconds, updating self.state."""
+        start = time.time()
+        while time.time() - start < duration:
+            frame = self._recv_frame(sock)
+            if frame is None:
+                continue
+            ftype, seq, payload = frame
+            if ftype == FRAME_CMD and payload:
+                self._process_cmd(payload)
+
+    def _recv_frame(self, sock: socket.socket):
+        """Receive and ACK one frame. Returns (type, seq, payload) or None."""
         try:
-            data, addr = self._sock.recvfrom(4096)
+            data, addr = sock.recvfrom(4096)
             if len(data) < 4:
                 return None
             seq, ftype, length = struct.unpack('<BBH', data[:4])
             payload = data[4:4 + length]
             if ftype == FRAME_CMD:
-                self._send_ack(seq)
-                self._process_cmd(payload)
+                # Send ACK
+                ack = _build_frame(seq, FRAME_ACK, b"")
+                sock.sendto(ack, (self.host, self.port))
             return (ftype, seq, payload)
         except socket.timeout:
             return None
         except OSError:
             return None
 
-    def _recv_loop(self, duration: float):
-        start = time.time()
-        while time.time() - start < duration:
-            self._recv_one()
-
-    def _listen_loop(self):
-        while self._running and self._sock:
-            self._recv_one()
-            now = time.time()
-            if now - self._last_ping >= 1.0:
-                self._send_cmd(CMD_PING)
-                self._last_ping = now
-
     def _process_cmd(self, payload: bytes):
         if not payload:
             return
         cmd = payload[0]
         data = payload[1:]
-        changed = False
 
         if cmd == CMD_MODE and data:
-            self.state.mode = data[0]; changed = True
+            self.state.mode = data[0]
         elif cmd == CMD_TARGET_TEMP and len(data) >= 2:
-            self.state.target_temperature = decode_temp(data); changed = True
+            self.state.target_temperature = decode_temp(data)
         elif cmd == CMD_CURRENT_TEMP and len(data) >= 2:
-            self.state.current_temperature = decode_temp(data); changed = True
+            self.state.current_temperature = decode_temp(data)
         elif cmd == CMD_KEEP_WARM and data:
-            self.state.keep_warm = bool(data[0]); changed = True
+            self.state.keep_warm = bool(data[0])
         elif cmd == CMD_SMART_MODE and data:
-            self.state.smart_mode = bool(data[0]); changed = True
+            self.state.smart_mode = bool(data[0])
         elif cmd == CMD_BSS and data:
-            self.state.bss = bool(data[0]); changed = True
+            self.state.bss = bool(data[0])
         elif cmd == CMD_TURBO and data:
-            self.state.turbo = bool(data[0]); changed = True
+            self.state.turbo = bool(data[0])
         elif cmd == CMD_TANK and data:
-            self.state.tank_level = data[0]; changed = True
+            self.state.tank_level = data[0]
         elif cmd == CMD_ERROR and data:
-            self.state.error_code = data[0]; changed = True
+            self.state.error_code = data[0]
         elif cmd == CMD_DIAGNOSTICS and data and data[0] == 0 and len(data) >= 3:
             flags = data[1]
             self.state.wifi_connected = bool(flags & 4)
             self.state.mqtt_connected = bool(flags & 8)
             self.state.rssi = data[2] - 256 if data[2] > 127 else data[2]
-            changed = True
-
-        if changed and self._on_state_changed:
-            self._on_state_changed(self.state)

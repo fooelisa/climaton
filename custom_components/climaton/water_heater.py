@@ -79,7 +79,7 @@ class ClimatonWaterHeater(CoordinatorEntity[ClimatonCoordinator], WaterHeaterEnt
             await self.hass.async_add_executor_job(
                 self.coordinator.connection.set_temperature, temp
             )
-            await self.coordinator.async_request_refresh()
+            self.async_write_ha_state()
 
     async def async_set_operation_mode(self, operation_mode: str) -> None:
         mode_int = MODE_TO_INT.get(operation_mode)
@@ -87,4 +87,4 @@ class ClimatonWaterHeater(CoordinatorEntity[ClimatonCoordinator], WaterHeaterEnt
             await self.hass.async_add_executor_job(
                 self.coordinator.connection.set_mode, mode_int
             )
-            await self.coordinator.async_request_refresh()
+            self.async_write_ha_state()
