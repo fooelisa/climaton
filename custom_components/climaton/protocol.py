@@ -138,9 +138,28 @@ class ClimatonConnection:
     # --- Private methods (must be called with _lock held) ---
 
     def _write_cmd(self, cmd: int, payload: bytes):
-        """Send a write command: connect, send, collect state, disconnect."""
-        sock, seq = self._open_and_handshake()
-        if sock is None:
+        """Send a write command on the last known connection state.
+
+        Does a handshake first to establish the session, sends the
+        command, then collects just the ACK + echoed state (~0.5s).
+        """
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(0.5)
+        seq = 0
+
+        # Quick handshake
+        data = _build_frame(seq, FRAME_CMD, bytes([CMD_HANDSHAKE]) + self.token)
+        sock.sendto(data, (self.host, self.port))
+
+        start = time.time()
+        while time.time() - start < 3:
+            frame = self._recv_frame(sock)
+            if frame and frame[0] == FRAME_CMD and frame[2] and frame[2][0] == CMD_HANDSHAKE:
+                resp = frame[2][1:]
+                if len(resp) >= 21 and resp[5:21] != b'\x00' * 16:
+                    break
+        else:
+            sock.close()
             return
 
         # Send the actual command
@@ -148,8 +167,8 @@ class ClimatonConnection:
         data = _build_frame(seq, FRAME_CMD, bytes([cmd & 0xFF]) + payload)
         sock.sendto(data, (self.host, self.port))
 
-        # Wait for ACK + state update
-        self._collect_state(sock, 2.0)
+        # Collect ACK + state echo (short wait)
+        self._collect_state(sock, 0.5)
         sock.close()
 
     def _cycle(self) -> bool:
@@ -222,8 +241,8 @@ class ClimatonConnection:
             (self.host, self.port),
         )
 
-        # Collect state dump
-        self._collect_state(sock, 3.0)
+        # Collect state dump (device sends all state within ~100ms of handshake)
+        self._collect_state(sock, 1.0)
         return sock, seq
 
     def _collect_state(self, sock: socket.socket, duration: float):
