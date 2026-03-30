@@ -173,9 +173,9 @@ The EWH50SI is device class `boiler`, type `2` or `93`.
 | `0x29`   | Bss                    | R/W | 1 byte (0/1 toggle)              | BSS (bacteriostatic) mode       |
 | `0x2C`   | Statistics             | R   | varies                           | Usage statistics                |
 | `0x31`   | Turbo                  | R/W | 1 byte (0/1 toggle or range)     | Turbo heating mode              |
-| `0x34`   | CurrentPower           | R   | varies                           | Current power consumption       |
-| `0x33`   | CurrentAmperage        | R   | varies                           | Current amperage                |
-| `0x35`   | CurrentVoltage         | R   | varies                           | Current voltage                 |
+| `0x34`   | CurrentPower           | R   | varies                           | Current power (model-dependent) |
+| `0x33`   | CurrentAmperage        | R   | varies                           | Current amperage (model-dependent) |
+| `0x35`   | CurrentVoltage         | R   | varies                           | Current voltage (model-dependent) |
 | `0x40`   | ScheduleSet            | R/W | varies                           | Set schedule                    |
 | `0x41`   | ScheduleRemove         | W   | varies                           | Remove schedule                 |
 | `0x42`   | ProgramData            | R   | varies                           | Program/recipe data             |
@@ -237,7 +237,7 @@ def decode_temp(data: bytes) -> float:
 - `keep_warm` — Keep warm after reaching target
 - `water_tank` — Water tank level indicator
 - `smart_mode` — Smart/auto operation
-- `power_consume` — Power consumption monitoring
+- `power_consume` — Power consumption monitoring (listed in device config but not observed in state dumps)
 - `schedule` — Scheduling support
 - `bss` — Bacteriostatic mode (anti-legionella)
 
