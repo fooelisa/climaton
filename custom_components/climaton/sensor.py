@@ -29,7 +29,6 @@ async def async_setup_entry(
 
     async_add_entities([
         ClimatonCurrentTempSensor(coordinator, token, device_info),
-        ClimatonTankSensor(coordinator, token, device_info),
         ClimatonRssiSensor(coordinator, token, device_info),
     ])
 
@@ -50,21 +49,6 @@ class ClimatonCurrentTempSensor(CoordinatorEntity[ClimatonCoordinator], SensorEn
     def native_value(self):
         return self.coordinator.connection.state.current_temperature
 
-
-class ClimatonTankSensor(CoordinatorEntity[ClimatonCoordinator], SensorEntity):
-    _attr_has_entity_name = True
-    _attr_name = "Tank level"
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:gauge"
-
-    def __init__(self, coordinator, token, device_info):
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{token}_tank_level"
-        self._attr_device_info = device_info
-
-    @property
-    def native_value(self):
-        return self.coordinator.connection.state.tank_level
 
 
 class ClimatonRssiSensor(CoordinatorEntity[ClimatonCoordinator], SensorEntity):
