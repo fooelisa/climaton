@@ -5,6 +5,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import DOMAIN
 from .coordinator import ClimatonCoordinator
@@ -23,8 +24,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     connection = ClimatonConnection(host, port, token)
     ok = await hass.async_add_executor_job(connection.connect)
     if not ok:
-        _LOGGER.error("Failed to connect to Climaton device at %s:%s", host, port)
-        return False
+        raise ConfigEntryNotReady(
+            f"Cannot connect to Climaton device at {host}:{port}, will retry"
+        )
 
     coordinator = ClimatonCoordinator(hass, connection)
     await coordinator.async_config_entry_first_refresh()
