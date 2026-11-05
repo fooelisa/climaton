@@ -63,7 +63,7 @@ If Home Assistant is on the same network as the water heater, it also finds the 
 
 The integration connects by IP address. When your router gives the water heater a new address, the device announces it over mDNS with its MAC address. Home Assistant matches the MAC to the entry and moves the entry to the new address. You do not need to do anything.
 
-Entries made before version 0.3.0 learn the MAC from the first announcement at their current address. If such an entry has already lost its device, Home Assistant tries that entry's token on the announced address once, and moves the entry if the device accepts it.
+Entries made before version 0.3.0 learn the MAC from the first announcement at their current address. If such an entry has already lost its device, Home Assistant tries that entry's token on the announced address and moves the entry if the device accepts it.
 
 mDNS does not cross subnets or VLANs. If Home Assistant is on a different network from the water heater, set a DHCP reservation for the water heater on your router, or point the integration at the new address yourself:
 
