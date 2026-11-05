@@ -8,6 +8,8 @@ from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN
 from .const import DOMAIN, DEFAULT_PORT
 from .protocol import ClimatonConnection
 
+PORT_SCHEMA = vol.All(int, vol.Range(min=1, max=65535))
+
 
 class ClimatonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Climaton."""
@@ -18,6 +20,9 @@ class ClimatonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         conn = ClimatonConnection(host, port, token)
         try:
             return await self.hass.async_add_executor_job(conn.connect)
+        except (OSError, OverflowError):
+            # Unresolvable host, no route, or a bad port.
+            return False
         finally:
             conn.disconnect()
 
@@ -37,13 +42,21 @@ class ClimatonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_token"
 
             if not errors:
+                token_hex = token.hex()
                 if await self._async_can_connect(host, port, token):
                     await self.async_set_unique_id(token_hex)
                     # Same device (token) at a new address: update the
                     # existing entry instead of aborting without a change.
-                    self._abort_if_unique_id_configured(
-                        updates={CONF_HOST: host, CONF_PORT: port}
+                    entry = self.hass.config_entries.async_entry_for_domain_unique_id(
+                        DOMAIN, token_hex
                     )
+                    if entry is not None:
+                        return self.async_update_reload_and_abort(
+                            entry,
+                            title=f"Climaton ({host})",
+                            data_updates={CONF_HOST: host, CONF_PORT: port},
+                            reason="already_configured",
+                        )
                     return self.async_create_entry(
                         title=f"Climaton ({host})",
                         data={
@@ -58,7 +71,7 @@ class ClimatonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema({
                 vol.Required(CONF_HOST): str,
-                vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
+                vol.Optional(CONF_PORT, default=DEFAULT_PORT): PORT_SCHEMA,
                 vol.Required(CONF_TOKEN): str,
             }),
             errors=errors,
@@ -88,7 +101,7 @@ class ClimatonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_HOST, default=entry.data[CONF_HOST]): str,
                 vol.Optional(
                     CONF_PORT, default=entry.data.get(CONF_PORT, DEFAULT_PORT)
-                ): int,
+                ): PORT_SCHEMA,
             }),
             errors=errors,
         )

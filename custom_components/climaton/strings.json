@@ -24,7 +24,7 @@
       "invalid_token": "Token must be exactly 32 hex characters (16 bytes)."
     },
     "abort": {
-      "already_configured": "This device is already configured. Its IP address and port were updated.",
+      "already_configured": "This device is already configured. Its IP address and port are now set to the values you entered.",
       "reconfigure_successful": "The device IP address and port were updated."
     }
   }
