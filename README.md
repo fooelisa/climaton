@@ -16,6 +16,7 @@ Reverse-engineered from the ClimatOn Android app. Uses the local UDP protocol �
 - **Switches** — keep warm, smart mode, anti-legionella (BSS)
 - Fully local control over UDP — no internet dependency
 - Polling every 30 seconds
+- Finds the device over mDNS and follows it when its IP address changes
 
 ## Installation
 
@@ -56,11 +57,13 @@ The script will poll the device. Press the **WiFi/pairing button** on your water
 2. Search for **Climaton**
 3. Enter your device's IP address, port (default: 41122), and the hex token from step 1
 
+If Home Assistant is on the same network as the water heater, it also finds the device by itself over mDNS (`_syncleo._udp`). It then shows **Discovered: Climaton** with the IP address filled in, and asks only for the token.
+
 ### Changing the IP address
 
-The integration connects by IP address. If your router gives the water heater a new address, Home Assistant loses the device. To prevent this, set a DHCP reservation for the water heater on your router.
+The integration connects by IP address. When your router gives the water heater a new address, the device announces it over mDNS. Home Assistant then tries each configured token on the new address and moves the matching entry there. You do not need to do anything.
 
-To point the integration at the new address:
+mDNS does not cross subnets or VLANs. If Home Assistant is on a different network from the water heater, set a DHCP reservation for the water heater on your router, or point the integration at the new address yourself:
 
 1. Go to **Settings → Devices & Services → Climaton**
 2. Open the entry's **⋮** menu and choose **Reconfigure**

@@ -1,9 +1,14 @@
 {
   "domain": "climaton",
   "name": "Climaton Water Heater",
-  "codeowners": ["@fooelisa"],
+  "codeowners": [
+    "@fooelisa"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/fooelisa/climaton",
   "iot_class": "local_polling",
-  "version": "0.2.0"
+  "version": "0.3.0",
+  "zeroconf": [
+    "_syncleo._udp.local."
+  ]
 }
