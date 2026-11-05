@@ -56,6 +56,18 @@ The script will poll the device. Press the **WiFi/pairing button** on your water
 2. Search for **Climaton**
 3. Enter your device's IP address, port (default: 41122), and the hex token from step 1
 
+### Changing the IP address
+
+The integration connects by IP address. If your router gives the water heater a new address, Home Assistant loses the device. To prevent this, set a DHCP reservation for the water heater on your router.
+
+To point the integration at the new address:
+
+1. Go to **Settings → Devices & Services → Climaton**
+2. Open the entry's **⋮** menu and choose **Reconfigure**
+3. Enter the new IP address. The token stays the same, so you do not need to pair again.
+
+Adding the integration again with the same token and the new IP address also updates the existing entry.
+
 ## Protocol Documentation
 
 See [docs/protocol.md](docs/protocol.md) for the full reverse-engineered protocol specification, including:
