@@ -141,25 +141,42 @@ class ClimatonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return self.async_abort(reason="already_configured")
                 return self._async_move_entry(entry, host, port, mac)
 
-        # An entry at this address that has no MAC yet: learn it.
+        # An entry at this address that has no MAC yet: learn it, but only
+        # if the device there is the entry's own. A loaded entry has just
+        # reached it; otherwise check its token at its own address.
         for entry in entries:
             if entry.data[CONF_HOST] == host and entry.data[CONF_PORT] == port:
-                if mac and CONF_MAC not in entry.data:
+                if mac and CONF_MAC not in entry.data and (
+                    entry.state is config_entries.ConfigEntryState.LOADED
+                    or await self._async_can_connect(
+                        host, port, bytes.fromhex(entry.data[CONF_TOKEN])
+                    )
+                ):
                     self.hass.config_entries.async_update_entry(
                         entry, data={**entry.data, CONF_MAC: mac}
                     )
                 return self.async_abort(reason="already_configured")
 
         # Repeat announcements and the "Ignore" button refer to this id.
-        await self.async_set_unique_id(mac or f"zeroconf-{discovery_info.name}")
+        # An open card for this device at an older address is replaced.
+        unique_id = mac or f"zeroconf-{discovery_info.name}"
+        for flow in self._async_in_progress(include_uninitialized=True):
+            if (
+                flow["flow_id"] != self.flow_id
+                and flow["context"].get("unique_id") == unique_id
+                and flow["context"].get("title_placeholders", {}).get("host") != host
+            ):
+                self.hass.config_entries.flow.async_abort(flow["flow_id"])
+        await self.async_set_unique_id(unique_id)
         self._abort_if_unique_id_configured()
 
         # Entries created before discovery have no MAC. Only for those that
-        # cannot reach their device, try their token on the new address.
-        # Working entries keep their token to themselves.
+        # could not be set up, try their token on the new address.
+        # Working and disabled entries keep their token to themselves.
         for entry in entries:
             if (
                 CONF_MAC in entry.data
+                or entry.disabled_by
                 or entry.state is config_entries.ConfigEntryState.LOADED
                 or not _is_ip(entry.data[CONF_HOST])
             ):
