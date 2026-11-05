@@ -44,12 +44,9 @@ class ClimatonConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 token_hex = token.hex()
                 if await self._async_can_connect(host, port, token):
-                    await self.async_set_unique_id(token_hex)
+                    entry = await self.async_set_unique_id(token_hex)
                     # Same device (token) at a new address: update the
                     # existing entry instead of aborting without a change.
-                    entry = self.hass.config_entries.async_entry_for_domain_unique_id(
-                        DOMAIN, token_hex
-                    )
                     if entry is not None:
                         return self.async_update_reload_and_abort(
                             entry,
