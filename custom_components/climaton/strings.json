@@ -33,7 +33,8 @@
     "abort": {
       "already_configured": "This device is already configured. Its IP address and port are now set to the values you entered.",
       "reconfigure_successful": "The device IP address and port were updated.",
-      "not_ipv4_address": "Only IPv4 addresses are supported."
+      "not_ipv4_address": "Only IPv4 addresses are supported.",
+      "not_supported": "This device uses an encrypted protocol version, which this integration does not support."
     },
     "flow_title": "Climaton ({host})"
   }
