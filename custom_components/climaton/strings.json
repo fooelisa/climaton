@@ -9,11 +9,23 @@
           "port": "UDP port",
           "token": "Device token (32 hex characters)"
         }
+      },
+      "reconfigure": {
+        "title": "Climaton Water Heater",
+        "description": "Change the device IP address or port. The pairing token stays the same.",
+        "data": {
+          "host": "Device IP address",
+          "port": "UDP port"
+        }
       }
     },
     "error": {
       "cannot_connect": "Cannot connect to device. Check IP, port, and token.",
       "invalid_token": "Token must be exactly 32 hex characters (16 bytes)."
+    },
+    "abort": {
+      "already_configured": "This device is already configured. Its IP address and port were updated.",
+      "reconfigure_successful": "The device IP address and port were updated."
     }
   }
 }
